@@ -150,6 +150,25 @@ f={
 			{notes[trk_cur] = regs[\trks][reg].deepCopy;});
 		win.refresh;
 	};
+	~paste_trk = {
+		|reg,time,pch,pch_ofst=60|
+		if (regs[\trks][reg].isNil.not,
+			{
+				seq_len.do({
+					|t|
+					var note_list = regs[\trks][reg][t];
+					if (note_list.size > 0, {
+						note_list.do({
+							|note|
+							var note_tmp = note.deepCopy;
+							note_tmp["pch"] = note_tmp["pch"] - pch_ofst + pch;
+							notes[trk_cur][(time + t).mod(seq_len)].add(note_tmp);
+							notes[trk_cur][(time + t).mod(seq_len)].sort({|a,b| a["pch"] > b["pch"]});
+						});
+					});
+				});
+		});
+	};
 	~clear_seq = {
 		notes = Array.fill(n_tracks, { Array.fill(seq_len,{List.new;}); });
 		win.refresh;
@@ -316,6 +335,16 @@ f={
 				"recalling track.".postln;
 				~recall_trk.(regnum);
 			},
+
+			112, { // p , paste track
+				var regnum = num_q.asInteger;
+				num_q = "";
+				"pasting track".postln;
+/*					~paste_trk = {
+		|reg,time,pch,pch_ofst=60|*/
+				~paste_trk.(regnum,t_cur,n_cur);
+			},
+
 //			"unknown key".postln;
 		);
 		win.refresh;
@@ -323,6 +352,23 @@ f={
 	win.drawFunc = {
 		var ofst_x = 10;
 		var ofst_y = 10;
+
+		// Draw track backgrounds
+		n_tracks.do({
+			|i|
+			if (i == trk_cur,{
+				Pen.color = Color.grey(0.75);
+			},{
+				Pen.color = Color.grey(0.5);
+			});
+			Pen.addRect(
+				Rect(ofst_x, ofst_y + (i * 12), seq_len * 4, 12);
+			);
+			Pen.addArc((ofst_x+(seq_len *4))@(ofst_y + (i * 12) + 6),6,3.0/2.0 * pi, pi );
+			Pen.perform(\fill);
+
+		});
+
 		// Draw cursor
 		Pen.color = Color.magenta(1,0.5);
 		Pen.addRect(
@@ -365,3 +411,4 @@ f.();
 ~load_regs.("/tmp/a");
 ~tclk_start.();
 ~tclk_set_tempo.(10);
+10.do({|i| i.postln; });
