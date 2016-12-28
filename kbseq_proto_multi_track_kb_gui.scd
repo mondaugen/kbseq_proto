@@ -9,7 +9,7 @@ f={
 	var n_chans = 16;
 	var chan_map = [0,1,2,3,4,5,6,9,7,8,10,11,12,13,14,15]; // Drum channel on 8th track
 	var notes = Array.fill(n_tracks, { Array.fill(seq_len,{List.new;}); });
-	var seq_regs = Dictionary.new;
+	var regs = Dictionary.newFrom([\seqs,Dictionary.new,\trks,Dictionary.new]);
 	var midi_out = MIDIOut.newByName(
 		"SimpleSynth virtual input",
 		"SimpleSynth virtual input"
@@ -62,6 +62,7 @@ f={
 			});
 		});
 	};
+	var win = Window.new("test arguments");
 	var sched_tick = {
 		do_t_nofs.();
 		do_t_nons.(seq_t);
@@ -72,7 +73,6 @@ f={
 		);
 		1
 	};
-	var win = Window.new("test arguments");
 	var t_cur = 0;
 	var big_t_cur = 0, mid_t_cur = 0, sma_t_cur = 0;
 	var n_cur = 60;
@@ -87,20 +87,25 @@ f={
 		+ (mid_t_cur * seq_len * 0.25/4.0)
 			+ (sma_t_cur * seq_len * 0.25 / 16.0)).round.asInteger;
 		"t_cur: ".post; t_cur.postln;
+		win.refresh;
 	};
 	var calc_l_cur = {
 		l_cur = ((big_l_cur * seq_len * 0.25)
 		+ (mid_l_cur * seq_len * 0.25/4.0)
 			+ (sma_l_cur * seq_len * 0.25 / 16.0)).round.asInteger;
 		"l_cur: ".post; l_cur.postln;
+		win.refresh;
 	};
 	var calc_n_cur = {
 		n_cur = (n_oct * 12) + n_pc + 60;
 		"n_cur: ".post; n_cur.postln;
+		win.refresh;
 	};
+
 	~rm_note = {
 		|track,beat,pch|
 		notes[track][beat].removeAllSuchThat({|x| x["pch"] == pch });
+		win.refresh;
 	};
 	~add_note = {
 		|track,beat, pch, dur = 4, vel = 100|
@@ -111,6 +116,8 @@ f={
 		note["dur"] = dur;
 		notes[track][beat].add(note);
 		notes[track][beat].sort({|a,b| a["pch"] > b["pch"]});
+		win.refresh;
+
 	};
 	~tclk_start = {
 		tclk.sched(0,sched_tick);
@@ -125,23 +132,39 @@ f={
 	};
 	~store_seq = {
 		|reg|
-		seq_regs[reg]=notes;
+		regs[\seqs][reg]=notes.deepCopy;
 	};
 	~recall_seq = {
 		|reg|
-		if (seq_regs[reg].isNil.not,
-			{notes = seq_regs[reg];});
+		if (regs[\seqs][reg].isNil.not,
+			{notes = regs[\seqs][reg].deepCopy;});
+		win.refresh;
+	};
+	~store_trk = {
+		|reg|
+		regs[\trks][reg]=notes[trk_cur].deepCopy;
+	};
+	~recall_trk = {
+		|reg|
+		if (regs[\trks][reg].isNil.not,
+			{notes[trk_cur] = regs[\trks][reg].deepCopy;});
+		win.refresh;
 	};
 	~clear_seq = {
 		notes = Array.fill(n_tracks, { Array.fill(seq_len,{List.new;}); });
+		win.refresh;
 	};
-	~save_seqs = {
-		|path|
-		seq_regs.writeArchive(path);
+	~clear_trk = {
+		notes[trk_cur] = Array.fill(seq_len,{List.new;});
+		win.refresh;
 	};
-	~load_seqs = {
+	~save_regs = {
 		|path|
-		seq_regs = Object.readArchive(path);
+		regs.writeArchive(path);
+	};
+	~load_regs = {
+		|path|
+		regs = Object.readArchive(path);
 	};
 	win.view.keyDownAction = { |doc, char, mod, unicode, keycode, key|
 		    [doc, char, mod, unicode, keycode, key].postln;
@@ -229,7 +252,8 @@ f={
 				if (num_q.size > 0, {
 					var trk;
 					trk = num_q.asInteger;
-					if ((trk > 0).and(trk < n_tracks),
+					num_q = "";
+					if ((trk >= 0).and(trk < n_tracks),
 						{ trk_cur = trk});
 					"trk_cur: ".post; trk_cur.postln;
 				});
@@ -240,8 +264,9 @@ f={
 				if(num_q.size > 0, {
 					var vel;
 					vel = num_q.asInteger;
+					num_q = "";
 					if ((vel > 0).and(vel < 128),
-						{ vel_cur = num_q.asInteger});
+						{ vel_cur = vel});
 					"vel_cur: ".post; vel_cur.postln;
 				});
 			},
@@ -252,13 +277,91 @@ f={
 				"removing note".postln;
 				~rm_note.(trk_cur, t_cur, n_cur);
 				// remove note
-			}
+			},
+
+			124, { // |
+				"clearing sequence".postln;
+				~clear_seq.();
+			},
+
+			34, { // "
+				"clearing track".postln;
+				~clear_trk.();
+			},
+
+			105, { // i
+				var regnum = num_q.asInteger;
+				num_q = "";
+				"storing sequence.".postln;
+				~store_seq.(regnum);
+			},
+
+			73, { // I
+				var regnum = num_q.asInteger;
+				num_q = "";
+				"recalling sequence.".postln;
+				~recall_seq.(regnum);
+			},
+
+			111, { // o
+				var regnum = num_q.asInteger;
+				num_q = "";
+				"storing track.".postln;
+				~store_trk.(regnum);
+			},
+
+			79, { // O
+				var regnum = num_q.asInteger;
+				num_q = "";
+				"recalling track.".postln;
+				~recall_trk.(regnum);
+			},
 //			"unknown key".postln;
 		);
+		win.refresh;
 	};
+	win.drawFunc = {
+		var ofst_x = 10;
+		var ofst_y = 10;
+		// Draw cursor
+		Pen.color = Color.magenta(1,0.5);
+		Pen.addRect(
+			Rect(ofst_x + (t_cur * 4), ofst_y + (trk_cur * 12) + n_cur.mod(12),  l_cur * 4, 1);
+		);
+		Pen.perform(\fill);
+
+		// Draw notes
+		notes.do({
+			|x,trk|
+			x.do({
+				|y,beat|
+				y.do({
+					|z|
+
+					Pen.color = Color.black(1,0.5);
+					Pen.addRect(
+						Rect(ofst_x + (beat * 4), ofst_y + (trk * 12) + z["pch"].mod(12),  z["dur"] * 4, 1);
+					);
+					Pen.perform(\fill);
+				});
+			});
+		});
+
+		// Draw playhead
+		Pen.color = Color.red(1,0.5);
+		Pen.line(Point(ofst_x + (seq_t * 4),0),Point(ofst_x + (seq_t * 4), ofst_y + (16 *12)));
+		Pen.stroke;
+
+	};
+	AppClock.sched(0,{
+		win.refresh;
+		0.1;
+	});
 	win.front;
 };
 f.();
 )
+~save_regs.("/tmp/a");
+~load_regs.("/tmp/a");
 ~tclk_start.();
 ~tclk_set_tempo.(10);
